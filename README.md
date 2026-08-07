@@ -47,7 +47,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/duya07/warpget/main/install.
 ## 使用
 
 ```bash
-# 查看定时器和最近日志
+# 查看当前配置和最近事件（推荐）
+warpget
+
+# 与裸命令相同
 warpget status
 
 # 立即检查一次

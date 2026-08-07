@@ -2,7 +2,7 @@
 
 set -uo pipefail
 
-readonly VERSION="1.1.1"
+readonly VERSION="1.1.2"
 readonly CONFIG_FILE="/etc/default/warpget"
 readonly WARP_CONFIG="/etc/wireguard/warp.conf"
 readonly TARGET_V4="1.1.1.1"
@@ -55,7 +55,7 @@ log() {
         ERROR) color="${RED}" ;;
     esac
 
-    printf '%b[%s] [%-7s]%b %s\n' "${color}" "${timestamp}" "${level}" "${RESET}" "${message}"
+    printf '%b[%s] [%s]%b %s\n' "${color}" "${timestamp}" "${level}" "${RESET}" "${message}"
 }
 
 die() {
@@ -147,6 +147,7 @@ show_status() {
     local state_color="${RED}"
     local target="未配置"
     local monitor_name="未配置"
+    local recent_events
 
     timer_state=$(systemctl is-active warpget.timer 2>/dev/null || true)
     timer_enabled=$(systemctl is-enabled warpget.timer 2>/dev/null || true)
@@ -166,8 +167,15 @@ show_status() {
     printf '  检查周期：每分钟\n'
     printf '  恢复轮数：最多 %s 轮\n' "${MAX_RETRY}"
     printf '  定时任务：%b%s%b（%s）\n' "${state_color}" "${timer_state:-unknown}" "${RESET}" "${timer_enabled:-unknown}"
-    printf '\n%b最近日志%b\n' "${BOLD}" "${RESET}"
-    journalctl -u warpget.service -n 12 --no-pager -o cat || true
+    printf '\n%b最近事件%b\n' "${BOLD}" "${RESET}"
+    recent_events=$(journalctl -t warpget -n 100 --no-pager -o cat -q 2>/dev/null |
+        grep -E '\[(WARNING|ERROR)\]|已恢复|重启 WARP' |
+        tail -n 10 || true)
+    if [[ -n ${recent_events} ]]; then
+        printf '%s\n' "${recent_events}"
+    else
+        printf '  %b暂无掉线、恢复或错误事件%b\n' "${GREEN}" "${RESET}"
+    fi
 }
 
 show_help() {
@@ -176,8 +184,8 @@ show_help() {
 
 用法：warpget <命令>
 
+  status   查看当前配置和最近事件（默认）
   check    立即检查所选 IP，故障时恢复 WARP
-  status   查看定时器状态和最近日志
   help     显示帮助
 
 修改配置：编辑 /etc/default/warpget
@@ -186,7 +194,7 @@ show_help() {
 EOF
 }
 
-case "${1:-check}" in
+case "${1:-status}" in
     check)
         check_once
         ;;
