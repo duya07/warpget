@@ -15,6 +15,7 @@ if [[ -r ${CONFIG_FILE} ]]; then
     # shellcheck source=/dev/null
     source "${CONFIG_FILE}"
 fi
+IP_VERSION="${IP_VERSION:-}"
 MAX_RETRY="${MAX_RETRY:-3}"
 
 log() {
@@ -33,6 +34,8 @@ die() {
 
 validate_config() {
     [[ ${EUID} -eq 0 ]] || die "检查和恢复需要 root 权限"
+    [[ ${IP_VERSION} == "4" || ${IP_VERSION} == "6" ]] ||
+        die "IP_VERSION 必须是 4 或 6，请重新运行安装脚本选择"
     if [[ ! ${MAX_RETRY} =~ ^[0-9]+$ ]] || (( MAX_RETRY < 1 || MAX_RETRY > 20 )); then
         die "MAX_RETRY 必须是 1～20 的整数"
     fi
@@ -43,19 +46,12 @@ validate_config() {
     [[ -s ${WARP_CONFIG} ]] || die "找不到 ${WARP_CONFIG}"
 }
 
-check_ipv4() {
-    ping -4 -q -c "${PING_COUNT}" -W "${PING_TIMEOUT}" "${TARGET_V4}" >/dev/null 2>&1
-}
-
-check_ipv6() {
-    ping -6 -q -c "${PING_COUNT}" -W "${PING_TIMEOUT}" "${TARGET_V6}" >/dev/null 2>&1
-}
-
-read_connectivity() {
-    IPV4_OK=0
-    IPV6_OK=0
-    check_ipv4 && IPV4_OK=1
-    check_ipv6 && IPV6_OK=1
+check_selected_ip() {
+    if [[ ${IP_VERSION} == "4" ]]; then
+        ping -4 -q -c "${PING_COUNT}" -W "${PING_TIMEOUT}" "${TARGET_V4}" >/dev/null 2>&1
+    else
+        ping -6 -q -c "${PING_COUNT}" -W "${PING_TIMEOUT}" "${TARGET_V6}" >/dev/null 2>&1
+    fi
 }
 
 set_default_endpoint() {
@@ -92,43 +88,29 @@ recover() {
         fi
 
         sleep "${RETRY_INTERVAL}"
-        read_connectivity
-
-        if (( IPV4_OK == 1 && IPV6_OK == 1 )); then
-            log INFO "IPv4、IPv6 已恢复"
-            return 0
-        fi
-
-        if (( IPV4_OK == 0 && IPV6_OK == 0 )); then
-            log WARNING "IPv4、IPv6 同时不通，停止恢复"
+        if check_selected_ip; then
+            log INFO "IPv${IP_VERSION} 已恢复"
             return 0
         fi
     done
 
-    log ERROR "达到最大恢复轮数，单栈仍未恢复"
+    log ERROR "达到最大恢复轮数，IPv${IP_VERSION} 仍未恢复"
     return 1
 }
 
 check_once() {
     validate_config
-    read_connectivity
-
-    if (( IPV4_OK == 1 && IPV6_OK == 1 )); then
-        log INFO "IPv4、IPv6 正常"
+    if check_selected_ip; then
+        log INFO "IPv${IP_VERSION} 正常"
         return 0
     fi
 
-    if (( IPV4_OK == 0 && IPV6_OK == 0 )); then
-        log WARNING "IPv4、IPv6 同时不通，不执行 WARP 恢复"
-        return 0
-    fi
-
-    (( IPV4_OK == 0 )) && log WARNING "IPv4 不通"
-    (( IPV6_OK == 0 )) && log WARNING "IPv6 不通"
+    log WARNING "IPv${IP_VERSION} 不通"
     recover
 }
 
 show_status() {
+    printf '监控目标：IPv%s\n' "${IP_VERSION:-未配置}"
     printf '最大恢复轮数：%s\n' "${MAX_RETRY}"
     printf '检查周期：每分钟\n'
     systemctl status warpget.timer --no-pager || true
@@ -140,11 +122,13 @@ show_help() {
     cat <<'EOF'
 用法：warpget <命令>
 
-  check    立即检查，单栈故障时恢复 WARP
+  check    立即检查所选 IP，故障时恢复 WARP
   status   查看定时器状态和最近日志
   help     显示帮助
 
-修改重试次数：编辑 /etc/default/warpget 后设置 MAX_RETRY=1..20
+修改配置：编辑 /etc/default/warpget
+  IP_VERSION=4 或 6
+  MAX_RETRY=1..20
 EOF
 }
 
