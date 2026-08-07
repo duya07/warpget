@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-readonly VERSION="1.1.1"
+readonly VERSION="1.1.2"
 readonly PROGRAM_NAME="warpget"
 readonly INSTALL_PATH="/usr/local/sbin/${PROGRAM_NAME}"
 readonly CONFIG_PATH="/etc/default/${PROGRAM_NAME}"
@@ -138,7 +138,7 @@ install_warpget() {
     step "3/4" "创建 systemd 服务和定时器"
     cat > "${SERVICE_PATH}" <<'EOF'
 [Unit]
-Description=WARP selected IP connectivity recovery
+Description=WARP 单栈连通性恢复
 After=network-online.target
 Wants=network-online.target
 
@@ -154,7 +154,7 @@ EOF
 
     cat > "${TIMER_PATH}" <<'EOF'
 [Unit]
-Description=Check WARP connectivity every minute
+Description=每分钟检查 WARP 连通性
 
 [Timer]
 OnBootSec=1min
@@ -183,7 +183,7 @@ EOF
     printf '  检测地址：%s\n' "$([[ ${ip_version} == 4 ]] && printf '1.1.1.1' || printf '2606:4700:4700::1111')"
     printf '  检查周期：每分钟\n'
     printf '  恢复轮数：最多 %s 轮\n' "${max_retry}"
-    printf '\n  查看状态：%bwarpget status%b\n' "${CYAN}" "${RESET}"
+    printf '\n  查看状态：%bwarpget%b（warpget status 亦可）\n' "${CYAN}" "${RESET}"
     printf '  查看日志：%bjournalctl -fu warpget.service%b\n\n' "${CYAN}" "${RESET}"
 }
 
