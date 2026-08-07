@@ -2,7 +2,7 @@
 
 set -uo pipefail
 
-readonly VERSION="1.1.0"
+readonly VERSION="1.1.1"
 readonly CONFIG_FILE="/etc/default/warpget"
 readonly WARP_CONFIG="/etc/wireguard/warp.conf"
 readonly TARGET_V4="1.1.1.1"
@@ -56,7 +56,6 @@ log() {
     esac
 
     printf '%b[%s] [%-7s]%b %s\n' "${color}" "${timestamp}" "${level}" "${RESET}" "${message}"
-    command -v logger >/dev/null 2>&1 && logger -t warpget "[${level}] ${message}" || true
 }
 
 die() {
@@ -133,7 +132,8 @@ recover() {
 check_once() {
     validate_config
     if check_selected_ip; then
-        log INFO "IPv${IP_VERSION} 正常"
+        # 定时任务正常时保持静默；用户手动运行时仍显示检查结果。
+        [[ -t 1 ]] && log INFO "IPv${IP_VERSION} 正常"
         return 0
     fi
 
