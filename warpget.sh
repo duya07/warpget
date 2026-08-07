@@ -2,6 +2,7 @@
 
 set -uo pipefail
 
+readonly VERSION="1.1.0"
 readonly CONFIG_FILE="/etc/default/warpget"
 readonly WARP_CONFIG="/etc/wireguard/warp.conf"
 readonly TARGET_V4="1.1.1.1"
@@ -18,12 +19,43 @@ fi
 IP_VERSION="${IP_VERSION:-}"
 MAX_RETRY="${MAX_RETRY:-3}"
 
+if [[ -t 1 && ${TERM:-dumb} != "dumb" && -z ${NO_COLOR:-} ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    CYAN=''
+    BOLD=''
+    RESET=''
+fi
+
+print_banner() {
+    printf '%b\n' \
+        "${CYAN}================================================${RESET}" \
+        "${BOLD}        WARPGET 单栈自动恢复 v${VERSION}${RESET}" \
+        "${CYAN}================================================${RESET}"
+}
+
 log() {
     local level=$1
     shift
     local message=$*
+    local color="${GREEN}"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    printf '[warpget] [%s] %s\n' "${level}" "${message}"
+    case ${level} in
+        WARNING) color="${YELLOW}" ;;
+        ERROR) color="${RED}" ;;
+    esac
+
+    printf '%b[%s] [%-7s]%b %s\n' "${color}" "${timestamp}" "${level}" "${RESET}" "${message}"
     command -v logger >/dev/null 2>&1 && logger -t warpget "[${level}] ${message}" || true
 }
 
@@ -81,7 +113,7 @@ recover() {
     local attempt
 
     for (( attempt=1; attempt<=MAX_RETRY; attempt++ )); do
-        log WARNING "第 ${attempt}/${MAX_RETRY} 轮恢复：重启 WARP"
+        log WARNING "[${attempt}/${MAX_RETRY}] IPv${IP_VERSION} 不通，正在重启 WARP"
         if ! restart_warp; then
             log ERROR "第 ${attempt} 轮重启失败"
             continue
@@ -110,16 +142,38 @@ check_once() {
 }
 
 show_status() {
-    printf '监控目标：IPv%s\n' "${IP_VERSION:-未配置}"
-    printf '最大恢复轮数：%s\n' "${MAX_RETRY}"
-    printf '检查周期：每分钟\n'
-    systemctl status warpget.timer --no-pager || true
-    printf '\n最近日志：\n'
-    journalctl -u warpget.service -n 20 --no-pager || true
+    local timer_state
+    local timer_enabled
+    local state_color="${RED}"
+    local target="未配置"
+    local monitor_name="未配置"
+
+    timer_state=$(systemctl is-active warpget.timer 2>/dev/null || true)
+    timer_enabled=$(systemctl is-enabled warpget.timer 2>/dev/null || true)
+    [[ ${timer_state} == "active" ]] && state_color="${GREEN}"
+    if [[ ${IP_VERSION} == "4" ]]; then
+        monitor_name="Cloudflare 官方 IPv4"
+        target="1.1.1.1"
+    elif [[ ${IP_VERSION} == "6" ]]; then
+        monitor_name="Cloudflare 官方 IPv6"
+        target="2606:4700:4700::1111"
+    fi
+
+    print_banner
+    printf '\n%b当前配置%b\n' "${BOLD}" "${RESET}"
+    printf '  监控目标：%s\n' "${monitor_name}"
+    printf '  检测地址：%s\n' "${target}"
+    printf '  检查周期：每分钟\n'
+    printf '  恢复轮数：最多 %s 轮\n' "${MAX_RETRY}"
+    printf '  定时任务：%b%s%b（%s）\n' "${state_color}" "${timer_state:-unknown}" "${RESET}" "${timer_enabled:-unknown}"
+    printf '\n%b最近日志%b\n' "${BOLD}" "${RESET}"
+    journalctl -u warpget.service -n 12 --no-pager -o cat || true
 }
 
 show_help() {
+    print_banner
     cat <<'EOF'
+
 用法：warpget <命令>
 
   check    立即检查所选 IP，故障时恢复 WARP

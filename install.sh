@@ -2,6 +2,7 @@
 
 set -Eeuo pipefail
 
+readonly VERSION="1.1.0"
 readonly PROGRAM_NAME="warpget"
 readonly INSTALL_PATH="/usr/local/sbin/${PROGRAM_NAME}"
 readonly CONFIG_PATH="/etc/default/${PROGRAM_NAME}"
@@ -10,12 +11,43 @@ readonly TIMER_PATH="/etc/systemd/system/${PROGRAM_NAME}.timer"
 readonly DOWNLOAD_URL="https://raw.githubusercontent.com/duya07/warpget/main/warpget.sh"
 TEMP_SCRIPT=""
 
+if [[ -t 2 && ${TERM:-dumb} != "dumb" && -z ${NO_COLOR:-} ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    CYAN=''
+    BOLD=''
+    RESET=''
+fi
+
+print_banner() {
+    printf '%b\n' \
+        "${CYAN}================================================${RESET}" \
+        "${BOLD}        WARPGET 单栈自动恢复 v${VERSION}${RESET}" \
+        "${CYAN}================================================${RESET}"
+}
+
 info() {
-    printf '[warpget] %s\n' "$*"
+    printf '%b[信息]%b %s\n' "${CYAN}" "${RESET}" "$*"
+}
+
+success() {
+    printf '%b[完成]%b %s\n' "${GREEN}" "${RESET}" "$*"
+}
+
+step() {
+    printf '%b[%s]%b %s\n' "${YELLOW}" "$1" "${RESET}" "$2"
 }
 
 die() {
-    printf '[warpget] 错误：%s\n' "$*" >&2
+    printf '%b[错误]%b %s\n' "${RED}" "${RESET}" "$*" >&2
     exit 1
 }
 
@@ -31,10 +63,9 @@ read_ip_version() {
     local choice="${1:-}"
 
     if [[ -z ${choice} && -t 0 ]]; then
-        printf '%s\n' \
-            "请选择服务器要通过 WARP 获取的 Cloudflare 官方 IP：" \
-            "  1. IPv4" \
-            "  2. IPv6" >&2
+        printf '\n%b请选择服务器要通过 WARP 获取的 Cloudflare 官方 IP：%b\n' "${BOLD}" "${RESET}" >&2
+        printf '  %b1.%b IPv4  （只检测 1.1.1.1）\n' "${GREEN}" "${RESET}" >&2
+        printf '  %b2.%b IPv6  （只检测 2606:4700:4700::1111）\n\n' "${GREEN}" "${RESET}" >&2
         read -r -p "请输入 [1-2]：" choice
     fi
 
@@ -55,7 +86,7 @@ read_retry() {
     local retry="${1:-}"
 
     if [[ -z ${retry} && -t 0 ]]; then
-        read -r -p "每次故障最多恢复几轮？[3]：" retry
+        read -r -p $'\n每次故障最多恢复几轮？[3]：' retry
     fi
     retry="${retry:-3}"
     validate_retry "${retry}" || die "重试次数必须是 1～20 的整数"
@@ -71,6 +102,7 @@ check_environment() {
     command -v wg-quick >/dev/null 2>&1 || die "缺少 wg-quick，请先安装 fscarmen/warp"
     command -v warp >/dev/null 2>&1 || die "缺少 warp 命令，请先安装 fscarmen/warp"
     [[ -s /etc/wireguard/warp.conf ]] || die "找不到 /etc/wireguard/warp.conf"
+    success "运行环境检查通过"
 }
 
 cleanup_temp() {
@@ -94,14 +126,16 @@ install_warpget() {
     TEMP_SCRIPT=$(mktemp)
     trap cleanup_temp EXIT
 
-    info "下载监控脚本"
+    step "1/4" "下载并检查监控脚本"
     curl -fsSL "${DOWNLOAD_URL}" -o "${TEMP_SCRIPT}"
     bash -n "${TEMP_SCRIPT}" || die "下载的监控脚本语法检查失败"
     install -m 0755 "${TEMP_SCRIPT}" "${INSTALL_PATH}"
 
+    step "2/4" "保存 IPv${ip_version} 监控配置"
     umask 022
     printf 'IP_VERSION=%s\nMAX_RETRY=%s\n' "${ip_version}" "${max_retry}" > "${CONFIG_PATH}"
 
+    step "3/4" "创建 systemd 服务和定时器"
     cat > "${SERVICE_PATH}" <<'EOF'
 [Unit]
 Description=WARP selected IP connectivity recovery
@@ -130,6 +164,7 @@ Unit=warpget.service
 WantedBy=timers.target
 EOF
 
+    step "4/4" "启用定时检查并立即执行一次"
     systemctl daemon-reload
     systemctl enable --now "${PROGRAM_NAME}.timer"
     if ! systemctl start "${PROGRAM_NAME}.service"; then
@@ -140,15 +175,20 @@ EOF
     TEMP_SCRIPT=""
     trap - EXIT
 
-    info "安装完成：每分钟只检查 IPv${ip_version}，每次最多恢复 ${max_retry} 轮"
-    info "查看状态：warpget status"
-    info "查看日志：journalctl -u warpget.service"
+    printf '\n%b安装完成%b\n' "${GREEN}${BOLD}" "${RESET}"
+    printf '  监控目标：Cloudflare 官方 IPv%s\n' "${ip_version}"
+    printf '  检测地址：%s\n' "$([[ ${ip_version} == 4 ]] && printf '1.1.1.1' || printf '2606:4700:4700::1111')"
+    printf '  检查周期：每分钟\n'
+    printf '  恢复轮数：最多 %s 轮\n' "${max_retry}"
+    printf '\n  查看状态：%bwarpget status%b\n' "${CYAN}" "${RESET}"
+    printf '  查看日志：%bjournalctl -fu warpget.service%b\n\n' "${CYAN}" "${RESET}"
 }
 
 main() {
     local ip_version
     local max_retry
 
+    print_banner
     check_root
 
     if [[ ${1:-} == "uninstall" ]]; then

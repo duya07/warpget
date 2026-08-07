@@ -2,6 +2,8 @@
 
 `warpget` 是配合 [fscarmen/warp](https://gitlab.com/fscarmen/warp) 使用的轻量 WARP 掉线恢复工具。
 
+交互安装和状态页提供清晰的彩色摘要；systemd 后台运行时自动使用无颜色纯文本日志，避免 ANSI 控制符污染日志。
+
 安装时由用户选择服务器通过 WARP 获取 Cloudflare 官方 IPv4 或 IPv6：
 
 - 选择 IPv4：每分钟只 ping `1.1.1.1`。
