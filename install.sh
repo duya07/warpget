@@ -27,6 +27,30 @@ validate_retry() {
     [[ $1 =~ ^[0-9]+$ ]] && (( 1 <= $1 && $1 <= 20 ))
 }
 
+read_ip_version() {
+    local choice="${1:-}"
+
+    if [[ -z ${choice} && -t 0 ]]; then
+        printf '%s\n' \
+            "请选择服务器要通过 WARP 获取的 Cloudflare 官方 IP：" \
+            "  1. IPv4" \
+            "  2. IPv6" >&2
+        read -r -p "请输入 [1-2]：" choice
+    fi
+
+    case "${choice,,}" in
+        1|4|ipv4)
+            printf '4'
+            ;;
+        2|6|ipv6)
+            printf '6'
+            ;;
+        *)
+            die "请选择 IPv4 或 IPv6"
+            ;;
+    esac
+}
+
 read_retry() {
     local retry="${1:-}"
 
@@ -65,7 +89,8 @@ uninstall_warpget() {
 }
 
 install_warpget() {
-    local max_retry=$1
+    local ip_version=$1
+    local max_retry=$2
     TEMP_SCRIPT=$(mktemp)
     trap cleanup_temp EXIT
 
@@ -75,11 +100,11 @@ install_warpget() {
     install -m 0755 "${TEMP_SCRIPT}" "${INSTALL_PATH}"
 
     umask 022
-    printf 'MAX_RETRY=%s\n' "${max_retry}" > "${CONFIG_PATH}"
+    printf 'IP_VERSION=%s\nMAX_RETRY=%s\n' "${ip_version}" "${max_retry}" > "${CONFIG_PATH}"
 
     cat > "${SERVICE_PATH}" <<'EOF'
 [Unit]
-Description=WARP IPv4/IPv6 connectivity recovery
+Description=WARP selected IP connectivity recovery
 After=network-online.target
 Wants=network-online.target
 
@@ -115,12 +140,15 @@ EOF
     TEMP_SCRIPT=""
     trap - EXIT
 
-    info "安装完成：每分钟检查一次，每次最多恢复 ${max_retry} 轮"
+    info "安装完成：每分钟只检查 IPv${ip_version}，每次最多恢复 ${max_retry} 轮"
     info "查看状态：warpget status"
     info "查看日志：journalctl -u warpget.service"
 }
 
 main() {
+    local ip_version
+    local max_retry
+
     check_root
 
     if [[ ${1:-} == "uninstall" ]]; then
@@ -129,7 +157,9 @@ main() {
     fi
 
     check_environment
-    install_warpget "$(read_retry "${1:-}")"
+    ip_version=$(read_ip_version "${1:-}")
+    max_retry=$(read_retry "${2:-}")
+    install_warpget "${ip_version}" "${max_retry}"
 }
 
 main "$@"
