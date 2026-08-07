@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-readonly VERSION="1.1.0"
+readonly VERSION="1.1.1"
 readonly PROGRAM_NAME="warpget"
 readonly INSTALL_PATH="/usr/local/sbin/${PROGRAM_NAME}"
 readonly CONFIG_PATH="/etc/default/${PROGRAM_NAME}"
@@ -147,6 +147,9 @@ Type=oneshot
 EnvironmentFile=-/etc/default/warpget
 ExecStart=/usr/local/sbin/warpget check
 TimeoutStartSec=0
+SyslogIdentifier=warpget
+StandardOutput=journal
+StandardError=journal
 EOF
 
     cat > "${TIMER_PATH}" <<'EOF'

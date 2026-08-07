@@ -4,6 +4,8 @@
 
 交互安装和状态页提供清晰的彩色摘要；systemd 后台运行时自动使用无颜色纯文本日志，避免 ANSI 控制符污染日志。
 
+正常的每分钟检查保持静默，只记录掉线、重启、恢复和错误事件。项目不创建独立日志文件，日志统一交给 systemd-journald 管理，因此不会重复写入，容量限制和轮转沿用服务器现有的 journald 策略。
+
 安装时由用户选择服务器通过 WARP 获取 Cloudflare 官方 IPv4 或 IPv6：
 
 - 选择 IPv4：每分钟只 ping `1.1.1.1`。
@@ -53,6 +55,9 @@ warpget check
 
 # 持续查看日志
 journalctl -fu warpget.service
+
+# 查看 journald 总磁盘占用
+journalctl --disk-usage
 ```
 
 修改 `/etc/default/warpget` 中的 `IP_VERSION` 和 `MAX_RETRY` 即可切换监控目标或调整恢复轮数，无需重启定时器。
